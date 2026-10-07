@@ -1,0 +1,171 @@
+# DealGraph: a CRM built on a graph database
+
+A proof-of-concept CRM whose data lives in Neo4j, with KPI analytics, a per-client monthly
+conversion forecast (with back-test) and a recommendation engine that routes every new deal
+to the best available sales person, using their own domain track record or that of similar
+reps, and explains why. React UI served by FastAPI. Everything runs natively on Windows:
+Neo4j as a local server process and the API with `uvicorn`. No Docker.
+
+```
+.
+├── api/        FastAPI backend (Python): app/, tests/, scripts/, config.yaml, .env.example
+├── ui/         React + TypeScript web UI (built into ui/dist, served by the API)
+└── scripts/    PowerShell helpers: start.ps1, reset.ps1, test.ps1
+```
+
+> Proof of concept: there is no authentication. Anyone who can reach the API can reset the
+> data (`POST /api/admin/seed`). Run it on your own machine only.
+
+## Prerequisites (Windows 11, PowerShell)
+- **Java 21** (Neo4j 5.26 runs on Java 17 or 21): `winget install EclipseAdoptium.Temurin.21.JDK`,
+  then open a new terminal and check `java -version`.
+- **Neo4j Community 5.26.31, Windows ZIP** (`neo4j-community-5.26.31-windows.zip`) from the
+  [Neo4j Deployment Center](https://neo4j.com/deployment-center/) (Community → 5.26 LTS → Windows).
+  Not the `.rpm`/`.deb` files and not the 2026.x line.
+- **Python 3.12**, **Git**, and **Node.js 22+** (built and tested with Node 24 LTS) for the UI.
+
+## Neo4j setup (once)
+You run **two** Neo4j instances from two copies of the same ZIP:
+
+| Instance | Folder | Bolt | Browser | Used by |
+|---|---|---|---|---|
+| dev | `C:\neo4j\dev` | 7687 | http://localhost:7474 | the API |
+| test | `C:\neo4j\test` | 7688 | http://localhost:7475 | `pytest` only (tests wipe it) |
+
+1. Extract the ZIP twice, so that `C:\neo4j\dev\bin\neo4j.bat` and `C:\neo4j\test\bin\neo4j.bat` exist.
+2. In **each** folder, install the plugins:
+   - APOC: copy `labs\apoc-5.26.31-core.jar` to `plugins\`.
+   - GDS: the Windows ZIP does **not** include it. Download **GDS 2.13.13** (the version matched
+     to Neo4j 5.26.31) once and copy it into `plugins\`:
+     ```powershell
+     $ProgressPreference = 'SilentlyContinue'
+     Invoke-WebRequest https://graphdatascience.ninja/neo4j-graph-data-science-2.13.13.jar -OutFile "$env:USERPROFILE\Downloads\neo4j-graph-data-science-2.13.13.jar"
+     ```
+3. In **each** folder, append to `conf\neo4j.conf`:
+   ```
+   dbms.security.procedures.unrestricted=apoc.*,gds.*
+   dbms.security.procedures.allowlist=apoc.*,gds.*
+   server.memory.heap.initial_size=1G
+   server.memory.heap.max_size=1G
+   server.memory.pagecache.size=512M
+   ```
+   And in the **test** folder only, also append:
+   ```
+   server.bolt.listen_address=:7688
+   server.http.listen_address=:7475
+   ```
+4. Create the API config and set the same password (at least 8 characters) on both instances
+   **before their first start**:
+   ```powershell
+   Copy-Item api\.env.example api\.env     # then edit NEO4J_PASSWORD in api\.env
+   $pw = ((Get-Content api\.env | Where-Object { $_ -like 'NEO4J_PASSWORD=*' }) -split '=',2)[1]
+   & C:\neo4j\dev\bin\neo4j-admin.bat dbms set-initial-password $pw
+   & C:\neo4j\test\bin\neo4j-admin.bat dbms set-initial-password $pw
+   ```
+
+## Run locally
+```powershell
+# Terminal 1 - dev Neo4j (leave running; Ctrl+C stops it). Ready when it logs "Started."
+C:\neo4j\dev\bin\neo4j.bat console
+
+# Terminal 2 - API
+cd api
+python -m venv .venv; .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt -r requirements-dev.txt
+python -m uvicorn app.main:app --port 8000 --no-access-log
+```
+
+If Neo4j is not up yet, the API waits up to 30 s, then starts anyway. `/api/health` reports
+`degraded` until Neo4j is reachable and recovers by itself (no API restart needed).
+
+## Web UI
+Build it once (and after UI changes); the API then serves it at http://localhost:8000:
+```powershell
+cd ui; npm ci; npm run build; cd ..
+```
+If `ui\dist` does not exist the API still runs; UI pages return a JSON message telling you to build.
+
+Developing the UI with hot reload (API must be running on :8000):
+```powershell
+cd ui; npm run dev        # http://localhost:5173, /api is proxied to :8000
+npm run lint              # ESLint, zero warnings allowed
+```
+Pages: Dashboard, Clients & Deals (table, board, new client + deal with live assignment and
+override), Deal detail, Rep profile, Heatmap (plus rule vs GDS similarity), Graph explorer.
+
+## URLs
+- API docs (Swagger): http://localhost:8000/docs
+- Health: http://localhost:8000/api/health
+- Neo4j Browser (dev): http://localhost:7474 (user `neo4j`, password from `api\.env`)
+
+```powershell
+Invoke-RestMethod http://localhost:8000/api/health | ConvertTo-Json -Depth 5
+```
+
+## Configuration
+- `api/.env`: connection settings and secrets (see `api/.env.example`).
+- `api/config.yaml`: business tunables (thresholds, weights, capacity, windows). Every key is
+  required; an invalid value stops the API at startup with a message naming the key. Use a
+  different file with the env var `APP_CONFIG_PATH`. View the loaded values at
+  http://localhost:8000/api/meta/config.
+- On every start the API applies `api/app/schema/init.cypher` (5 uniqueness constraints,
+  6 range indexes, the 5 Domain nodes). It is idempotent; `/api/health` shows `schema_ok`.
+
+## How the forecast works
+`GET /api/analytics/forecast` estimates how many clients each sales person will convert this
+month. It looks at every open, owned deal expected to close this month. Each deal gets a win
+probability: of the deals that reached the same stage in the last 12 months, the share that
+were won, first using the rep's own deals in that domain, else the whole team's in that domain,
+else the whole team's at that stage (at least 3 deals needed for the first two). A client
+converts if at least one of its deals is won: P = 1 - (1 - p1)(1 - p2)... Clients at 70 % or more
+count as "commit", 30 % or more as "best case". `/forecast/backtest` replays the same method on
+last month as of its first day and compares it with what actually happened.
+
+## How recommendations work
+When a deal is created without an owner, the engine ranks every **available** sales person
+(active, fewer open deals than capacity). Fit is the rep's own win rate in the deal's domain
+(DIRECT, needs 3+ closed deals), or else the win rate of similar reps, discounted by 20 % (PEER;
+"similar" = win rates within 10 points in 3+ shared domains), or, if nobody fits, overall win rate
+(COLD_START). Score = 70 % fit + 30 % availability. The top 5 are stored with a plain-language
+reason and #1 becomes the owner; the manager can override. Expertise and similarity are rebuilt
+nightly (02:00), after every seed, and on `POST /api/admin/recompute`.
+
+## Analytics cross-check
+With the API running against the dev database, recompute the main KPIs independently with
+pandas and compare them with the API (exit code 0 = all match):
+```powershell
+cd api; .\.venv\Scripts\Activate.ps1
+python scripts\crosscheck_kpis.py            # --api <url> to target another API
+```
+
+## Stop / reset
+- Stop the API or Neo4j: press `Ctrl+C` in its terminal.
+- Wipe the dev database (deletes all data): stop dev Neo4j, then
+  `Remove-Item -Recurse -Force C:\neo4j\dev\data\databases\neo4j, C:\neo4j\dev\data\transactions\neo4j`
+  and start it again. The password is kept.
+- Reset to the demo dataset (**wipes everything** in the dev database, no confirmation, no auth):
+  ```powershell
+  Invoke-RestMethod -Method Post http://localhost:8000/api/admin/seed | ConvertTo-Json -Depth 5
+  ```
+  Loads 15 sales people, ~366 clients, 695 deals and ~2.9k activities, deterministic for a
+  given `AS_OF_DATE` and `seed.seed_random_seed`. Set `AS_OF_DATE=2026-10-06` in `api\.env`
+  to get exactly the data the tests and demo numbers are based on.
+
+## Running tests
+Unit tests need no database. Integration tests need the **test** instance and are skipped
+with a clear message if it is not running.
+```powershell
+# Terminal 3 - test Neo4j
+C:\neo4j\test\bin\neo4j.bat console
+
+# In api\ with the venv active
+pytest -q
+ruff check .; ruff format --check .
+```
+
+## Troubleshooting
+- `Activate.ps1 cannot be loaded`: run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
+- `java` not found / Neo4j will not start: install Java 21 and open a new terminal.
+- Port 7687/7474 (or 7688/7475) already in use: another Neo4j is running; stop it first.
+- Health shows `apoc_version` or `gds_version` null: the jar is missing from `plugins\` or the
+  `dbms.security.procedures.*` lines are missing; fix and restart that Neo4j instance.
