@@ -56,6 +56,7 @@ class OverrideRequest(BaseModel):
 class RecomputeResult(BaseModel):
     expertise_edges: int
     similar_pairs: int
+    related_pairs: int  # RELATED_TO edges between domains (embedding similarity)
     duration_ms: int
     computed_at: date  # the business "today" the edges were computed for
 

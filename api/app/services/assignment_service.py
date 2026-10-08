@@ -18,6 +18,7 @@ from app.models.assignment import (
 )
 from app.repositories import deals_repo, recommendation_repo
 from app.repositories.recommendation_repo import OwnerConflict
+from app.services import domain_service
 from app.services import recommendation_service as rs
 
 NO_AVAILABLE_MESSAGE = "No available sales person (all inactive or at capacity)"
@@ -56,6 +57,7 @@ def _ranking_config() -> rs.RankingConfig:
         weight_availability=a.weight_availability,
         peer_discount=a.peer_discount,
         max_candidates=a.max_candidates,
+        related_discount=get_config().domains.related_discount,
     )
 
 
@@ -130,7 +132,12 @@ async def assign_deal(deal_id: str) -> AssignmentResult:
         )
     inputs = await _load_inputs()
     ranking = rs.rank_candidates(
-        deal["domain"], inputs.reps, inputs.expertise, inputs.pairs, _ranking_config()
+        deal["domain"],
+        inputs.reps,
+        inputs.expertise,
+        inputs.pairs,
+        _ranking_config(),
+        await domain_service.related_domains(deal["domain"]),
     )
     statuses = ["ASSIGNED" if c.rank == 1 else "CANDIDATE" for c in ranking.candidates]
     top = ranking.candidates[0] if ranking.candidates else None
@@ -165,7 +172,12 @@ async def preview_deal(deal_id: str) -> AssignmentResult:
     deal = await _require_open_deal(deal_id)
     inputs = await _load_inputs()
     ranking = rs.rank_candidates(
-        deal["domain"], inputs.reps, inputs.expertise, inputs.pairs, _ranking_config()
+        deal["domain"],
+        inputs.reps,
+        inputs.expertise,
+        inputs.pairs,
+        _ranking_config(),
+        await domain_service.related_domains(deal["domain"]),
     )
     top = ranking.candidates[0] if ranking.candidates else None
     return AssignmentResult(
@@ -244,8 +256,8 @@ async def override(deal_id: str, rep_id: str) -> AssignmentResult:
             {"id": rep_id, "reason": reason},
         )
 
-    # Used only if the target has no recommendation yet: fit computed as normal (cold start if
-    # no DIRECT/PEER fit), availability before the target takes this deal.
+    # Used only if the target has no recommendation yet: fit computed as normal (DIRECT, PEER,
+    # RELATED, else cold start), availability before the target takes this deal.
     config = _ranking_config()
     fit = rs.fit_for(
         target,
@@ -254,6 +266,8 @@ async def override(deal_id: str, rep_id: str) -> AssignmentResult:
         inputs.pairs,
         {r.id: r.name for r in inputs.reps},
         config.peer_discount,
+        await domain_service.related_domains(deal["domain"]),
+        config.related_discount,
     )
     avail = rs.availability(target.open_count, target.capacity)
     new_rec = {

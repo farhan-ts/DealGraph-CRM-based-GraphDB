@@ -83,6 +83,13 @@ class ForecastConfig(_Group):
         return self
 
 
+class DomainsConfig(_Group):
+    embedding_model: Annotated[str, Field(min_length=1, pattern=r"\S")]
+    related_top_k: PositiveInt
+    related_min_similarity: OpenUnitInterval
+    related_discount: UnitInterval
+
+
 class SchedulerConfig(_Group):
     recompute_cron: Annotated[str, Field(min_length=1, pattern=r"\S")]
 
@@ -99,6 +106,7 @@ class AppConfig(_Group):
     similarity: SimilarityConfig
     assignment: AssignmentConfig
     forecast: ForecastConfig
+    domains: DomainsConfig
     scheduler: SchedulerConfig
     seed: SeedConfig
 

@@ -1,6 +1,8 @@
 // TypeScript mirror of .kiro/steering/api-contracts.md. Dates are ISO strings ("YYYY-MM-DD").
 
-export type Domain = "AI" | "Cybersecurity" | "IoT" | "DevOps" | "Cloud Migration";
+/** A domain name: the 5 built-ins (AI, Cybersecurity, IoT, DevOps, Cloud Migration) plus any
+ *  added at runtime via POST /api/domains. */
+export type Domain = string;
 export type DealStatus = "OPEN" | "WON" | "LOST";
 export type Stage = "LEAD" | "QUALIFIED" | "PROPOSAL" | "NEGOTIATION";
 export type StageAction = "ADVANCE" | "WIN" | "LOSE";
@@ -8,7 +10,7 @@ export type ActivityType = "CALL" | "EMAIL" | "MEETING" | "DEMO";
 export type Outcome = "POSITIVE" | "NEUTRAL" | "NEGATIVE";
 export type ClientSize = "SMB" | "MID_MARKET" | "ENTERPRISE";
 export type Region = "North" | "South" | "East" | "West" | "International";
-export type FitType = "DIRECT" | "PEER" | "COLD_START";
+export type FitType = "DIRECT" | "PEER" | "RELATED" | "COLD_START";
 export type RecommendationStatus = "ASSIGNED" | "CANDIDATE" | "OVERRIDDEN";
 export type AssignmentStatus = "ASSIGNED" | "UNASSIGNED" | "MANUAL" | "PENDING_ENGINE";
 export type ProbabilitySource = "REP_DOMAIN_STAGE" | "TEAM_DOMAIN_STAGE" | "TEAM_STAGE";
@@ -48,6 +50,12 @@ export interface AppConfig {
     max_candidates: number;
   };
   forecast: { forecast_commit_threshold: number; forecast_best_case_threshold: number };
+  domains: {
+    embedding_model: string;
+    related_top_k: number;
+    related_min_similarity: number;
+    related_discount: number;
+  };
   scheduler: { recompute_cron: string };
   seed: { seed_random_seed: number };
 }
@@ -64,8 +72,28 @@ export interface SeedResult {
 export interface RecomputeResult {
   expertise_edges: number;
   similar_pairs: number;
+  related_pairs: number;
   duration_ms: number;
   computed_at: string;
+}
+
+export interface RelatedDomain {
+  domain: Domain;
+  similarity: number;
+  used_for_fit: boolean;
+}
+
+export interface DomainInfo {
+  name: Domain;
+  description: string | null;
+  builtin: boolean;
+  created_at: string | null;
+  related: RelatedDomain[];
+}
+
+export interface DomainCreate {
+  name: string;
+  description: string;
 }
 
 // ---- sales people ----

@@ -31,7 +31,7 @@ import { PageHeader, Panel, Tabs } from "../components/Layout";
 import { DealLink, RepLink } from "../components/Links";
 import { InfoTip } from "../components/Overlay";
 import { EmptyState, QueryState } from "../components/States";
-import { ACCENT, DOMAIN_COLOR, INK_MUTED, LINE, STAGE_COLOR, STAGE_LABEL, STAGES } from "../lib/domains";
+import { ACCENT, domainColor, INK_MUTED, LINE, STAGE_COLOR, STAGE_LABEL, STAGES } from "../lib/domains";
 import { formatDate, formatDecimal, formatINR, formatINRCompact, formatInt, formatMonth, formatPct } from "../lib/format";
 
 const AXIS = { fontSize: 11, fill: INK_MUTED };
@@ -381,7 +381,7 @@ function DomainTrendPanel() {
                 <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend wrapperStyle={{ fontSize: 12 }} iconSize={10} />
                 {t.series.map((s) => (
-                  <Line key={s.domain} type="monotone" dataKey={s.domain} stroke={DOMAIN_COLOR[s.domain]} strokeWidth={1.75} dot={false} isAnimationActive={false} />
+                  <Line key={s.domain} type="monotone" dataKey={s.domain} stroke={domainColor(s.domain)} strokeWidth={1.75} dot={false} isAnimationActive={false} />
                 ))}
               </LineChart>
             </ResponsiveContainer>

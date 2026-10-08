@@ -10,7 +10,6 @@ from fastapi import Query
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 
 from app.core import clock
-from app.core.domains import DOMAINS
 
 
 class DealStatus(StrEnum):
@@ -59,21 +58,16 @@ class Region(StrEnum):
     INTERNATIONAL = "International"
 
 
-class Domain(StrEnum):
-    AI = "AI"
-    CYBERSECURITY = "Cybersecurity"
-    IOT = "IoT"
-    DEVOPS = "DevOps"
-    CLOUD_MIGRATION = "Cloud Migration"
-
-
-# Single source of truth is app/core/domains.py; fail fast if they ever drift apart.
-assert tuple(d.value for d in Domain) == DOMAINS, "Domain enum out of sync with DOMAINS"
+# Domains are no longer a fixed enum: the 5 built-ins plus any created via POST /api/domains.
+# Requests are checked against the database by `domain_service.require_domain` (422 if unknown).
+DOMAIN_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9 &/+.\-]*[A-Za-z0-9+]$"
+Domain = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
 
 
 class FitType(StrEnum):
     DIRECT = "DIRECT"
     PEER = "PEER"
+    RELATED = "RELATED"  # borrowed from similar domains (new domains with no history yet)
     COLD_START = "COLD_START"
 
 

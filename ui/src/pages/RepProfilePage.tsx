@@ -9,7 +9,7 @@ import { DataTable } from "../components/DataTable";
 import { Panel } from "../components/Layout";
 import { ClientLink } from "../components/Links";
 import { EmptyState, QueryState } from "../components/States";
-import { DOMAIN_COLOR } from "../lib/domains";
+import { domainColor } from "../lib/domains";
 import { formatDate, formatDecimal, formatINR, formatMonth, formatPct } from "../lib/format";
 
 export function RepProfilePage() {
@@ -139,7 +139,7 @@ function ExpertisePanel({ rep }: { rep: SalesPersonDetail }) {
 }
 
 function ExpertiseBar({ row }: { row: ExpertiseRow }) {
-  const color = DOMAIN_COLOR[row.domain];
+  const color = domainColor(row.domain);
   const pct = (row.win_rate ?? 0) * 100;
   return (
     <div className="grid grid-cols-[130px_1fr_150px] items-center gap-3 text-[13px]">

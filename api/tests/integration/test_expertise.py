@@ -62,8 +62,11 @@ async def test_recompute_endpoint_is_idempotent(client: httpx.AsyncClient) -> No
     first = (await client.post("/api/admin/recompute")).json()
     second = (await client.post("/api/admin/recompute")).json()
     for result in (first, second):
-        assert set(result) == {"expertise_edges", "similar_pairs", "duration_ms", "computed_at"}
+        assert set(result) == {
+            "expertise_edges", "similar_pairs", "related_pairs", "duration_ms", "computed_at",
+        }  # fmt: skip
         assert (result["expertise_edges"], result["similar_pairs"]) == (55, 7)
+        assert result["related_pairs"] == 10  # 5 built-in domains -> 10 unordered pairs
         assert result["computed_at"] == TODAY.isoformat()
     assert (await run_read(EXPERTISE_EDGES), await run_read(SIMILAR_EDGES)) == before
 

@@ -64,7 +64,7 @@ async def test_override_to_a_rep_without_a_recommendation(client: httpx.AsyncCli
     added = next(c for c in result["candidates"] if c["sales_person_id"] == "SP-004")
     assert added["rank"] == 0 and added["status"] == "ASSIGNED"
     assert added["reason"].startswith("Manual override: ")
-    assert added["fit_type"] in {"DIRECT", "PEER", "COLD_START"}
+    assert added["fit_type"] in {"DIRECT", "PEER", "RELATED", "COLD_START"}
     assert len(result["candidates"]) == 6
 
 

@@ -56,10 +56,14 @@ INVARIANTS: dict[str, str] = {
         WHERE a.date < d.created_at OR a.date > coalesce(d.closed_at, $today)
         RETURN count(a) AS violations
     """,
-    "7_exactly_5_domains": """
+    # Domains are dynamic: the 5 built-ins must exist exactly once; added ones are allowed.
+    "7_builtin_domains_present_and_unique": """
         MATCH (d:Domain)
-        WITH count(d) AS n
-        RETURN CASE WHEN n = 5 THEN 0 ELSE 1 END AS violations
+        WITH collect(d.name) AS names
+        WITH names, [n IN ['AI', 'Cybersecurity', 'IoT', 'DevOps', 'Cloud Migration']
+                     WHERE size([x IN names WHERE x = n]) <> 1] AS bad_builtins
+        RETURN size(bad_builtins)
+             + size(names) - size(apoc.coll.toSet(names)) AS violations
     """,
     "8_client_created_before_its_deals": """
         MATCH (d:Deal)-[:FOR_CLIENT]->(c:Client)

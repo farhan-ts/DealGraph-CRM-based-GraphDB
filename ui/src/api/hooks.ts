@@ -18,6 +18,8 @@ import type {
   Deal,
   DealStatus,
   Domain,
+  DomainCreate,
+  DomainInfo,
   DomainTrend,
   Forecast,
   Health,
@@ -42,8 +44,11 @@ export const useHealth = () =>
   useQuery({ queryKey: ["health"], queryFn: () => api.get<Health>("/health"), retry: false });
 export const useConfig = () =>
   useQuery({ queryKey: ["meta", "config"], queryFn: () => api.get<AppConfig>("/meta/config"), staleTime: Infinity });
+/** Domain names in display order (built-ins first). Not static any more: domains can be added. */
 export const useDomains = () =>
-  useQuery({ queryKey: ["meta", "domains"], queryFn: () => api.get<Domain[]>("/meta/domains"), staleTime: Infinity });
+  useQuery({ queryKey: ["domains", "names"], queryFn: () => api.get<Domain[]>("/meta/domains"), staleTime: 60_000 });
+export const useDomainList = () =>
+  useQuery({ queryKey: ["domains", "list"], queryFn: () => api.get<DomainInfo[]>("/domains") });
 
 // ---- sales people ----
 export const useSalesPeople = (active?: boolean) =>
@@ -133,6 +138,15 @@ function invalidateBusinessData(qc: ReturnType<typeof useQueryClient>) {
   for (const key of ["deals", "clients", "salespeople", "analytics", "recommendations", "graph"]) {
     void qc.invalidateQueries({ queryKey: [key] });
   }
+}
+
+/** Adding a domain changes rep similarity and every per-domain view, so refresh everything. */
+export function useCreateDomain() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: DomainCreate) => api.post<DomainInfo>("/domains", body),
+    onSuccess: () => qc.invalidateQueries(),
+  });
 }
 
 export function useCreateClientWithDeal() {

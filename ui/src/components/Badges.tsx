@@ -1,8 +1,8 @@
 import type { DealStatus, Domain, FitType, RecommendationStatus, Stage } from "../api/types";
-import { DOMAIN_COLOR, STAGE_LABEL } from "../lib/domains";
+import { domainColor, STAGE_LABEL } from "../lib/domains";
 
 export function DomainChip({ domain, muted = false }: { domain: Domain; muted?: boolean }) {
-  const color = DOMAIN_COLOR[domain];
+  const color = domainColor(domain);
   return (
     <span
       className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-xs ${
@@ -47,10 +47,11 @@ export function StageLabel({ stage }: { stage: Stage }) {
 const FIT_STYLE: Record<FitType, string> = {
   DIRECT: "border-accent/40 text-accent bg-accent-soft",
   PEER: "border-d-iot/40 text-d-iot bg-d-iot/5",
+  RELATED: "border-d-devops/40 text-d-devops bg-d-devops/5",
   COLD_START: "border-line-strong text-ink-muted bg-canvas",
 };
 
-const FIT_LABEL: Record<FitType, string> = { DIRECT: "Direct", PEER: "Peer", COLD_START: "Cold start" };
+const FIT_LABEL: Record<FitType, string> = { DIRECT: "Direct", PEER: "Peer", RELATED: "Related domain", COLD_START: "Cold start" };
 
 export function FitTypeBadge({ fitType }: { fitType: FitType }) {
   return (

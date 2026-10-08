@@ -3,10 +3,10 @@ import ForceGraph2D, { type ForceGraphMethods, type LinkObject, type NodeObject 
 import { Link, useSearchParams } from "react-router-dom";
 
 import { useSalesPeople, useSubgraph } from "../api/hooks";
-import type { DealStatus, Domain, GraphLinkType, GraphNodeType } from "../api/types";
+import type { DealStatus, GraphLinkType, GraphNodeType } from "../api/types";
 import { PageHeader } from "../components/Layout";
 import { EmptyState, ErrorState, Loading } from "../components/States";
-import { ACCENT, DOMAIN_COLOR, STATUS_COLOR } from "../lib/domains";
+import { ACCENT, domainColor, STATUS_COLOR } from "../lib/domains";
 import { formatDate, formatINR, formatPct } from "../lib/format";
 import { useElementSize } from "../lib/useElementSize";
 
@@ -39,7 +39,7 @@ function nodeColor(node: NodeData, focusId: string): string {
     case "SalesPerson":
       return node.id === focusId ? ACCENT : PEER_COLOR;
     case "Domain":
-      return DOMAIN_COLOR[node.id as Domain] ?? CLIENT_COLOR;
+      return domainColor(node.id);
     case "Client":
       return CLIENT_COLOR;
     case "Deal":
@@ -270,7 +270,7 @@ function Legend() {
   const items: [string, string, "circle" | "square" | "dash"][] = [
     ["Selected sales person", ACCENT, "circle"],
     ["Similar peer", PEER_COLOR, "circle"],
-    ["Domain", DOMAIN_COLOR.AI, "square"],
+    ["Domain", domainColor("AI"), "square"],
     ["Client", CLIENT_COLOR, "circle"],
     ["Open deal", STATUS_COLOR.OPEN, "circle"],
     ["Won deal", STATUS_COLOR.WON, "circle"],

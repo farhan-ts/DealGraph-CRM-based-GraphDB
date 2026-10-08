@@ -8,12 +8,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from app.core import clock
 from app.core.config import get_config
-from app.core.domains import DOMAINS
+from app.core.numbers import round_half_up
 from app.models.analytics import (
     CycleOut,
     DomainCycle,
@@ -37,6 +36,9 @@ from app.models.analytics import (
     WinRatesOut,
 )
 from app.repositories import analytics_repo
+from app.services.domain_service import domain_names
+
+__all__ = ["round_half_up"]  # re-exported: other services import it from here
 
 STAGES: tuple[str, ...] = ("LEAD", "QUALIFIED", "PROPOSAL", "NEGOTIATION")
 TREND_MONTHS = 12
@@ -45,12 +47,6 @@ TREND_MONTHS = 12
 # ---------------------------------------------------------------------------
 # Pure helpers
 # ---------------------------------------------------------------------------
-def round_half_up(value: float, ndigits: int) -> float:
-    """Decimal half-up rounding (Python's round() is banker's rounding on binary floats)."""
-    quantum = Decimal(1).scaleb(-ndigits)
-    return float(Decimal(repr(value)).quantize(quantum, rounding=ROUND_HALF_UP))
-
-
 def round_int(value: float | None) -> int | None:
     """Half-up to a whole number; None stays None."""
     return None if value is None else int(round_half_up(value, 0))
@@ -153,7 +149,7 @@ async def get_win_rates() -> WinRatesOut:
         await analytics_repo.win_rates_by_domain(today=today, window_start=window_start)
     )
     by_domain = []
-    for domain in DOMAINS:
+    for domain in await domain_names():
         row = domains.get(domain, {"handled": 0, "won": 0})
         by_domain.append(
             DomainWinRate(
@@ -174,9 +170,10 @@ async def get_heatmap() -> HeatmapOut:
         (row["sales_person_id"], row["domain"]): row
         for row in await analytics_repo.heatmap_cells(today=today, window_start=window_start)
     }
+    all_domains = await domain_names()
     cells = []
     for rep in reps:
-        for domain in DOMAINS:
+        for domain in all_domains:
             row = found.get((rep["id"], domain), {"handled": 0, "won": 0})
             cells.append(
                 HeatmapCell(
@@ -188,7 +185,7 @@ async def get_heatmap() -> HeatmapOut:
                     qualifies=row["handled"] >= min_deals,
                 )
             )
-    return HeatmapOut(reps=[HeatmapRep(**rep) for rep in reps], domains=list(DOMAINS), cells=cells)
+    return HeatmapOut(reps=[HeatmapRep(**rep) for rep in reps], domains=all_domains, cells=cells)
 
 
 async def get_cycle() -> CycleOut:
@@ -207,7 +204,7 @@ async def get_cycle() -> CycleOut:
         await analytics_repo.cycle_by_domain(today=today, window_start=window_start)
     )
     by_domain = []
-    for domain in DOMAINS:
+    for domain in await domain_names():
         row = domains.get(domain, {"won_count": 0, "avg_cycle_days": None, "avg_won_value": None})
         by_domain.append(
             DomainCycle(
@@ -261,12 +258,13 @@ async def get_domain_trend() -> DomainTrendOut:
     labels = month_labels(today)
     from_date = date(int(labels[0][:4]), int(labels[0][5:]), 1)
     _, to_date = clock.current_month_bounds()
-    counts: dict[str, dict[str, int]] = {domain: {} for domain in DOMAINS}
+    all_domains = await domain_names()
+    counts: dict[str, dict[str, int]] = {domain: {} for domain in all_domains}
     for row in await analytics_repo.domain_trend(from_date=from_date, to_date=to_date):
         label = f"{row['year']:04d}-{row['month']:02d}"
         counts.setdefault(row["domain"], {})[label] = row["n"]
     series = [
         DomainSeries(domain=domain, counts=list(zero_fill(labels, counts[domain]).values()))
-        for domain in DOMAINS
+        for domain in all_domains
     ]
     return DomainTrendOut(months=labels, series=series)

@@ -61,6 +61,7 @@ async def test_meta_config_is_grouped_like_the_yaml(client: httpx.AsyncClient) -
         "similarity",
         "assignment",
         "forecast",
+        "domains",
         "scheduler",
         "seed",
     ]

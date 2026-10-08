@@ -9,10 +9,11 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from app.services.analytics_service import round_half_up
+from app.core.numbers import round_half_up
 
 DIRECT = "DIRECT"
 PEER = "PEER"
+RELATED = "RELATED"
 COLD_START = "COLD_START"
 INACTIVE = "INACTIVE"
 AT_CAPACITY = "AT_CAPACITY"
@@ -51,6 +52,16 @@ class RankingConfig:
     weight_availability: float
     peer_discount: float
     max_candidates: int
+    related_discount: float = 0.7
+
+
+@dataclass(frozen=True)
+class RelatedDomain:
+    """A domain similar to the deal's domain (embedding similarity) and its weight."""
+
+    domain: str
+    similarity: float
+    weight: float  # > 0; a RELATED fit is the weighted average over these
 
 
 @dataclass(frozen=True)
@@ -189,6 +200,39 @@ def peer_fit(
     return Fit(fit, PEER, reason)
 
 
+def related_fit(
+    rep: RepState,
+    domain: str,
+    expertise: ExpertiseMap,
+    related: Sequence[RelatedDomain],
+    related_discount: float,
+) -> Fit | None:
+    """Borrow the rep's OWN win rates in domains similar to D (used when nobody has a DIRECT
+    or PEER fit, typically a newly added domain).
+
+    fit = discount * sum(weight * win_rate(R, Dk) for Dk where R qualifies) / sum(all weights)
+    Dividing by ALL the related weights means a rep covering only a weakly related domain
+    gets a proportionally smaller fit.
+    """
+    total_weight = sum(r.weight for r in related)
+    contributions = [
+        (r, expertise[(rep.id, r.domain)])
+        for r in related
+        if (rep.id, r.domain) in expertise and expertise[(rep.id, r.domain)].qualifies
+    ]
+    if not contributions or total_weight <= 0:
+        return None
+    fit = related_discount * sum(r.weight * e.win_rate for r, e in contributions) / total_weight
+    parts = [
+        f"{pct(e.win_rate)}% of {r.domain} (similarity {r.similarity:.2f})"
+        for r, e in contributions
+    ]
+    reason = (
+        f"RELATED fit: no track record in {domain} yet; wins {join_domains(parts)}; {_load(rep)}"
+    )
+    return Fit(fit, RELATED, reason)
+
+
 def cold_start_fit(rep: RepState, domain: str, expertise: ExpertiseMap) -> Fit:
     wr = overall_win_rate(rep.id, expertise)
     reason = f"No domain history for {domain}: overall win rate {pct(wr)}%; {_load(rep)}"
@@ -202,11 +246,14 @@ def fit_for(
     pairs: Iterable[SimilarPair],
     names: Mapping[str, str],
     peer_discount: float,
+    related: Sequence[RelatedDomain] = (),
+    related_discount: float = 0.7,
 ) -> Fit:
-    """DIRECT, else PEER, else COLD_START - used for a manual override target."""
+    """DIRECT, else PEER, else RELATED, else COLD_START - used for a manual override target."""
     return (
         direct_fit(rep, domain, expertise)
         or peer_fit(rep, domain, expertise, peers_by_rep(pairs), names, peer_discount)
+        or related_fit(rep, domain, expertise, related, related_discount)
         or cold_start_fit(rep, domain, expertise)
     )
 
@@ -224,6 +271,7 @@ def rank_candidates(
     expertise: ExpertiseMap,
     pairs: Iterable[SimilarPair],
     config: RankingConfig,
+    related: Sequence[RelatedDomain] = (),
 ) -> RankingResult:
     names = {r.id: r.name for r in reps}
     peers = peers_by_rep(pairs)
@@ -237,7 +285,7 @@ def rank_candidates(
         if not is_available(r)
     ]  # fmt: skip
 
-    # Step 2 - DIRECT / PEER fit; Step 3 - cold start only if nobody has a fit
+    # Step 2 - DIRECT / PEER fit
     fits: list[tuple[RepState, Fit]] = []
     for rep in eligible:
         fit = direct_fit(rep, domain, expertise) or peer_fit(
@@ -245,6 +293,15 @@ def rank_candidates(
         )
         if fit is not None:
             fits.append((rep, fit))
+    # Step 3 - tiers, like Step 2: only if nobody has a DIRECT/PEER fit (e.g. a newly added
+    # domain), rank the reps that have a RELATED fit (own win rates in similar domains). Reps
+    # without one are not ranked, so an undiscounted overall win rate can never outrank real
+    # related experience. COLD_START only if nobody has a RELATED fit either.
+    if not fits:
+        for rep in eligible:
+            fit = related_fit(rep, domain, expertise, related, config.related_discount)
+            if fit is not None:
+                fits.append((rep, fit))
     if not fits:
         fits = [(rep, cold_start_fit(rep, domain, expertise)) for rep in eligible]
 

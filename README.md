@@ -109,7 +109,7 @@ Invoke-RestMethod http://localhost:8000/api/health | ConvertTo-Json -Depth 5
   different file with the env var `APP_CONFIG_PATH`. View the loaded values at
   http://localhost:8000/api/meta/config.
 - On every start the API applies `api/app/schema/init.cypher` (5 uniqueness constraints,
-  6 range indexes, the 5 Domain nodes). It is idempotent; `/api/health` shows `schema_ok`.
+  6 range indexes, the 5 built-in Domain nodes). It is idempotent; `/api/health` shows `schema_ok`.
 
 ## How the forecast works
 `GET /api/analytics/forecast` estimates how many clients each sales person will convert this
@@ -126,9 +126,32 @@ When a deal is created without an owner, the engine ranks every **available** sa
 (active, fewer open deals than capacity). Fit is the rep's own win rate in the deal's domain
 (DIRECT, needs 3+ closed deals), or else the win rate of similar reps, discounted by 20 % (PEER;
 "similar" = win rates within 10 points in 3+ shared domains), or, if nobody fits, overall win rate
-(COLD_START). Score = 70 % fit + 30 % availability. The top 5 are stored with a plain-language
+(COLD_START; for domains with no history at all, RELATED comes first, see below).
+Score = 70 % fit + 30 % availability. The top 5 are stored with a plain-language
 reason and #1 becomes the owner; the manager can override. Expertise and similarity are rebuilt
 nightly (02:00), after every seed, and on `POST /api/admin/recompute`.
+
+## Adding domains
+Besides the 5 built-ins, a manager can add a domain from the "New client and deal" drawer
+(Domain → "+ New domain…") or with `POST /api/domains {name, description}`. The name and
+description are turned into a vector by a small local embedding model
+(`BAAI/bge-small-en-v1.5` via fastembed; nothing leaves the machine), and its cosine similarity
+to every other domain is stored on `RELATED_TO` edges. `GET /api/domains` lists them.
+
+Nobody has history in a new domain, so DIRECT and PEER cannot apply. Reps are then ranked on
+their **own** win rates in the up to 3 most similar domains above 0.65 similarity, weighted by
+how far above 0.65 each one is, and discounted by 30 % (RELATED fit). Only if nobody has
+related experience does COLD_START apply. Adding a domain also reruns the recompute, because
+the rep-similarity score divides by the number of domains. Tunables: the `domains` group in
+`config.yaml`. Seeding removes added domains.
+
+- The model (~64 MB) is downloaded to `api\.models` the first time a domain is added (needs
+  internet once; about 30–40 s). After that it loads from disk in a few seconds.
+- It needs the **Microsoft Visual C++ 2015+ Redistributable (x64)**. With an outdated one,
+  onnxruntime crashes the API on import:
+  `winget install Microsoft.VCRedist.2015+.x64`.
+- If the model cannot be loaded, `POST /api/domains` returns 503 `EMBEDDINGS_UNAVAILABLE` and
+  nothing is written; everything else keeps working.
 
 ## Analytics cross-check
 With the API running against the dev database, recompute the main KPIs independently with

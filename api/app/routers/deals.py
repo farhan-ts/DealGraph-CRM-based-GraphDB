@@ -49,7 +49,7 @@ async def list_deals(
     return await crud_service.list_deals(
         status=status,
         stage=stage,
-        domain=domain.value if domain else None,
+        domain=domain,
         owner_id=owner_id,
         client_id=client_id,
         closing_month=closing_month,

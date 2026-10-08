@@ -25,6 +25,12 @@ EXPECTED_DEFAULTS: dict[str, dict[str, Any]] = {
         "max_candidates": 5,
     },
     "forecast": {"forecast_commit_threshold": 0.70, "forecast_best_case_threshold": 0.30},
+    "domains": {
+        "embedding_model": "BAAI/bge-small-en-v1.5",
+        "related_top_k": 3,
+        "related_min_similarity": 0.65,
+        "related_discount": 0.7,
+    },
     "scheduler": {"recompute_cron": "0 2 * * *"},
     "seed": {"seed_random_seed": 42},
 }

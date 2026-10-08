@@ -24,3 +24,6 @@ ui/dist/
 .vscode/
 Thumbs.db
 .DS_Store
+
+# Local embedding model cache (downloaded on first use)
+api/.models/

@@ -23,6 +23,7 @@ from app.routers import (
     analytics,
     clients,
     deals,
+    domains,
     graph,
     health,
     meta,
@@ -30,9 +31,19 @@ from app.routers import (
     salespeople,
 )
 from app.schema import runner as schema_runner
-from app.services import expertise_service, scheduler
+from app.services import domain_service, expertise_service, scheduler
 
 logger = logging.getLogger(__name__)
+
+
+async def _after_schema() -> None:
+    """Startup, once Neo4j is reachable: built-in domain descriptions/embeddings, then the
+    recompute check."""
+    try:
+        await domain_service.ensure_builtin_domains()
+    except db.CONNECTIVITY_ERRORS as exc:
+        logger.warning("Built-in domain setup skipped: %s", exc)
+    await _recompute_if_missing_safely()
 
 
 async def _recompute_if_missing_safely() -> None:
@@ -58,12 +69,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     background: asyncio.Task[None] | None = None
     if await db.init_driver(settings):
         if await schema_runner.apply_schema_safely():
-            await _recompute_if_missing_safely()
+            await _after_schema()
     else:
         # Neo4j is not up yet: apply the schema (and the recompute check) once it is.
-        background = asyncio.create_task(
-            schema_runner.apply_schema_when_ready(after=_recompute_if_missing_safely)
-        )
+        background = asyncio.create_task(schema_runner.apply_schema_when_ready(after=_after_schema))
 
     if settings.SCHEDULER_ENABLED:
         scheduler.start(config.scheduler.recompute_cron)
@@ -93,6 +102,7 @@ def create_app(ui_dist: Path = DEFAULT_UI_DIST) -> FastAPI:
         analytics,
         recommendations,
         graph,
+        domains,
     ):
         app.include_router(module.router, prefix="/api")
     mount_spa(app, ui_dist)  # built UI from <repo>/ui/dist (after the API routers)

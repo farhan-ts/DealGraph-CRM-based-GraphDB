@@ -2,14 +2,14 @@ import { useDeferredValue, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { errorMessage } from "../api/client";
-import { useClients, useDeals, useMoveStage, useSalesPeople } from "../api/hooks";
+import { useClients, useDeals, useDomains, useMoveStage, useSalesPeople } from "../api/hooks";
 import type { Client, Deal, DealFilters, DealStatus, Domain, Stage, StageAction } from "../api/types";
 import { DomainChip, StageLabel, StatusBadge } from "../components/Badges";
 import { DataTable, Pager } from "../components/DataTable";
 import { PageHeader, Panel, Tabs } from "../components/Layout";
 import { ClientLink, RepLink } from "../components/Links";
 import { EmptyState, QueryState } from "../components/States";
-import { DOMAINS, STAGE_LABEL, STAGES } from "../lib/domains";
+import { STAGE_LABEL, STAGES } from "../lib/domains";
 import { formatDate, formatINR, formatINRCompact, SIZE_LABEL } from "../lib/format";
 import { NewClientDealDrawer } from "./NewClientDealDrawer";
 
@@ -56,6 +56,7 @@ function DealsTab() {
   const [offset, setOffset] = useState(0);
   const [view, setView] = useState<"table" | "board">("table");
   const reps = useSalesPeople();
+  const domains = useDomains();
 
   const update = (patch: Partial<DealFilters>) => {
     setFilters((f) => ({ ...f, ...patch }));
@@ -89,7 +90,7 @@ function DealsTab() {
         <Filter label="Domain">
           <select className="input w-40" value={filters.domain ?? ""} onChange={(e) => update({ domain: (e.target.value || undefined) as Domain | undefined })}>
             <option value="">All</option>
-            {DOMAINS.map((d) => (
+            {domains.data?.map((d) => (
               <option key={d}>{d}</option>
             ))}
           </select>

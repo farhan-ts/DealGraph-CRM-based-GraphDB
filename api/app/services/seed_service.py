@@ -11,7 +11,7 @@ from app.models.admin import SeedCounts, SeedResult
 from app.repositories import seed_repo
 from app.schema import runner as schema_runner
 from app.seed.generator import generate
-from app.services import busy, expertise_service
+from app.services import busy, domain_service, expertise_service
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,8 @@ async def _seed() -> SeedResult:
     )
 
     await seed_repo.wipe_all()
-    await schema_runner.apply_schema()  # recreates the 5 Domain nodes
+    await schema_runner.apply_schema()  # recreates the 5 built-in Domain nodes
+    await domain_service.ensure_builtin_domains()  # descriptions + stored embeddings
     await seed_repo.load_sales_people(dataset.sales_people)
     await seed_repo.load_clients(dataset.clients)
     await seed_repo.load_deals(dataset.deals)

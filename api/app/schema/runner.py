@@ -91,14 +91,16 @@ async def apply_schema_when_ready(
 
 
 async def check_schema() -> bool:
-    """True only if all named constraints/indexes and exactly the 5 Domain nodes exist."""
+    """True only if all named constraints/indexes exist, the 5 built-in Domain nodes exist and
+    no domain name is duplicated (added domains are allowed)."""
     constraints = set(await schema_repo.list_constraint_names())
     indexes = set(await schema_repo.list_index_names())
     domains = await schema_repo.list_domain_names()
 
     missing_constraints = [n for n in EXPECTED_CONSTRAINTS if n not in constraints]
     missing_indexes = [n for n in EXPECTED_INDEXES if n not in indexes]
-    domains_ok = Counter(domains) == Counter(DOMAINS)
+    counts = Counter(domains)
+    domains_ok = all(counts[d] == 1 for d in DOMAINS) and all(n == 1 for n in counts.values())
 
     if missing_constraints or missing_indexes or not domains_ok:
         logger.warning(

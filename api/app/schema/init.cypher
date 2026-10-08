@@ -37,6 +37,9 @@ FOR (n:Deal) ON (n.created_at);
 CREATE RANGE INDEX activity_date_idx IF NOT EXISTS
 FOR (n:Activity) ON (n.date);
 
-// ---- The 5 domains (same order as app/core/domains.py) ----
-UNWIND ['AI', 'Cybersecurity', 'IoT', 'DevOps', 'Cloud Migration'] AS name
-MERGE (:Domain {name: name});
+// ---- The 5 built-in domains (same order as app/core/domains.py) ----
+// Descriptions and embeddings are added by domain_service.ensure_builtin_domains().
+WITH ['AI', 'Cybersecurity', 'IoT', 'DevOps', 'Cloud Migration'] AS names
+UNWIND range(0, size(names) - 1) AS i
+MERGE (d:Domain {name: names[i]})
+SET d.builtin = true, d.position = i;

@@ -16,7 +16,6 @@ from neo4j.exceptions import ConstraintError
 
 from app.core import clock
 from app.core.config import get_config
-from app.core.domains import DOMAINS
 from app.core.errors import AppError
 from app.models.activities import ActivityCreate, ActivityOut
 from app.models.assignment import AssignedRep, AssignmentResult
@@ -32,7 +31,7 @@ from app.models.salespeople import (
     SimilarPeerOut,
 )
 from app.repositories import activities_repo, clients_repo, deals_repo, salespeople_repo
-from app.services import assignment_service
+from app.services import assignment_service, domain_service
 from app.services.recommendation_service import availability
 
 __all__ = ["availability", "month_range", "new_id", "next_state"]
@@ -195,8 +194,9 @@ async def get_sales_person(rep_id: str) -> SalesPersonDetail:
     edges = {r["domain"]: r for r in await salespeople_repo.list_expertise(rep_id)}
     empty = {"handled": 0, "won": 0, "lost": 0, "win_rate": None, "qualifies": False,
              "last_won_at": None}  # fmt: skip
-    expertise = [  # all 5 domains in the fixed order; no edge = no closed deals in the window
-        ExpertiseOut(**{**empty, **edges.get(domain, {}), "domain": domain}) for domain in DOMAINS
+    expertise = [  # every domain in display order; no edge = no closed deals in the window
+        ExpertiseOut(**{**empty, **edges.get(domain, {}), "domain": domain})
+        for domain in await domain_service.domain_names()
     ]
     peers = [SimilarPeerOut(**r) for r in await salespeople_repo.list_similar_peers(rep_id)]
     return SalesPersonDetail(
@@ -253,6 +253,7 @@ async def get_client(client_id: str) -> ClientDetail:
 
 async def create_client_with_deal(body: ClientWithDealCreate) -> ClientCreateResult:
     """Client + first deal in ONE transaction, then the assignment hook (or MANUAL owner)."""
+    domain = await domain_service.require_domain(body.deal.domain)
     owner = await _check_manual_owner(body.deal.owner_id)
     today = clock.today()
 
@@ -269,7 +270,7 @@ async def create_client_with_deal(body: ClientWithDealCreate) -> ClientCreateRes
                 "id": new_id("DL"),
                 "title": body.deal.title,
                 "value": body.deal.value,
-                "domain": body.deal.domain.value,
+                "domain": domain,
                 "expected_close_date": body.deal.expected_close_date,
             },
             owner_id=owner["id"] if owner else None,
@@ -277,7 +278,7 @@ async def create_client_with_deal(body: ClientWithDealCreate) -> ClientCreateRes
         )
 
     ids = await _with_id_retry(create)
-    assignment = await _assignment_for_new_deal(ids["deal_id"], body.deal.domain.value, owner)
+    assignment = await _assignment_for_new_deal(ids["deal_id"], domain, owner)
     client = await clients_repo.get_client(ids["client_id"])
     deal = await _require_deal(ids["deal_id"])
     return ClientCreateResult(
@@ -300,6 +301,8 @@ async def list_deals(
     offset: int,
 ) -> Page[DealOut]:
     close_from, close_to = month_range(closing_month) if closing_month else (None, None)
+    if domain is not None:
+        domain = await domain_service.require_domain(domain)
     rows, total = await deals_repo.list_deals(
         status=status.value if status else None,
         stage=stage.value if stage else None,
@@ -325,6 +328,7 @@ async def create_deal(body: DealCreate) -> DealCreateResult:
     """A new deal for an existing client."""
     if await clients_repo.get_client(body.client_id) is None:
         raise _not_found("CLIENT_NOT_FOUND", "Client", body.client_id)
+    domain = await domain_service.require_domain(body.domain)
     owner = await _check_manual_owner(body.owner_id)
     today = clock.today()
     deal_id = ""
@@ -337,7 +341,7 @@ async def create_deal(body: DealCreate) -> DealCreateResult:
             client_id=body.client_id,
             title=body.title,
             value=body.value,
-            domain=body.domain.value,
+            domain=domain,
             expected_close_date=body.expected_close_date,
             owner_id=owner["id"] if owner else None,
             today=today,
@@ -345,7 +349,7 @@ async def create_deal(body: DealCreate) -> DealCreateResult:
 
     if not await _with_id_retry(create):  # client deleted in the meantime
         raise _not_found("CLIENT_NOT_FOUND", "Client", body.client_id)
-    assignment = await _assignment_for_new_deal(deal_id, body.domain.value, owner)
+    assignment = await _assignment_for_new_deal(deal_id, domain, owner)
     return DealCreateResult(deal=DealOut(**await _require_deal(deal_id)), assignment=assignment)
 
 

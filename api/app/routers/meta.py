@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from app.core.config import AppConfig, config_dependency
-from app.core.domains import DOMAINS
+from app.services import domain_service
 
 router = APIRouter(prefix="/meta", tags=["meta"])
 
@@ -20,5 +20,5 @@ async def get_config(config: Annotated[AppConfig, Depends(config_dependency)]) -
 
 @router.get("/domains", response_model=list[str])
 async def get_domains() -> list[str]:
-    """The 5 domains in the fixed order used everywhere (including the UI)."""
-    return list(DOMAINS)
+    """All domain names in display order: the 5 built-ins, then added domains (UI uses this)."""
+    return await domain_service.domain_names()

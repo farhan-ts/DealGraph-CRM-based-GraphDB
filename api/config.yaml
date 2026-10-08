@@ -36,6 +36,18 @@ forecast:
   # Client probability at or above this counts as "best case".
   forecast_best_case_threshold: 0.30
 
+domains:
+  # Local sentence-embedding model used to compare domain descriptions (fastembed/ONNX).
+  embedding_model: "BAAI/bge-small-en-v1.5"
+  # A new domain borrows from at most this many of the most similar existing domains...
+  related_top_k: 3
+  # ...and only from those with cosine similarity above this. The weight of a related domain
+  # is (similarity - related_min_similarity), so clearly closer domains count more. (This
+  # model gives unrelated business domains about 0.60-0.65.)
+  related_min_similarity: 0.65
+  # Multiplier applied to a RELATED fit (win rate borrowed from similar domains).
+  related_discount: 0.7
+
 scheduler:
   # Nightly EXPERTISE_IN / SIMILAR_TO recompute (cron, server local time).
   recompute_cron: "0 2 * * *"
